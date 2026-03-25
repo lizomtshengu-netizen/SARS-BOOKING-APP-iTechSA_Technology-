@@ -21,20 +21,19 @@ async function startServer() {
 
     try {
       // 1. Send Email Notification
-      // Note: In a real app, you'd use SMTP credentials from process.env
-      // For this demo, we'll log the email sending and provide the structure
-      const transporter = nodemailer.createTransport({
-        // Placeholder for real SMTP configuration
-        // host: process.env.SMTP_HOST,
-        // port: Number(process.env.SMTP_PORT),
-        // secure: true,
-        // auth: {
-        //   user: process.env.SMTP_USER,
-        //   pass: process.env.SMTP_PASS,
-        // },
-        // Using a mock/json transport for demonstration if no credentials exist
-        jsonTransport: true
-      });
+      const transporter = nodemailer.createTransport(
+        process.env.SMTP_HOST ? {
+          host: process.env.SMTP_HOST,
+          port: Number(process.env.SMTP_PORT) || 587,
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        } : {
+          jsonTransport: true
+        }
+      );
 
       const mailOptions = {
         from: '"SARS BOOKING SYSTEM" <noreply@sars-bookings.run.app>',
@@ -89,9 +88,19 @@ async function startServer() {
     const { appointment, reason, userEmail } = req.body;
 
     try {
-      const transporter = nodemailer.createTransport({
-        jsonTransport: true
-      });
+      const transporter = nodemailer.createTransport(
+        process.env.SMTP_HOST ? {
+          host: process.env.SMTP_HOST,
+          port: Number(process.env.SMTP_PORT) || 587,
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        } : {
+          jsonTransport: true
+        }
+      );
 
       const mailOptions = {
         from: '"SARS BOOKING SYSTEM" <noreply@sars-bookings.run.app>',
@@ -143,9 +152,19 @@ async function startServer() {
     const { name, email, subject, message } = req.body;
 
     try {
-      const transporter = nodemailer.createTransport({
-        jsonTransport: true
-      });
+      const transporter = nodemailer.createTransport(
+        process.env.SMTP_HOST ? {
+          host: process.env.SMTP_HOST,
+          port: Number(process.env.SMTP_PORT) || 587,
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        } : {
+          jsonTransport: true
+        }
+      );
 
       const mailOptions = {
         from: '"SARS BOOKING SYSTEM" <noreply@sars-bookings.run.app>',
@@ -222,9 +241,19 @@ async function startServer() {
         if (appointmentDate >= twentyFourHoursFromNow && appointmentDate <= twentyFiveHoursFromNow) {
           console.log(`Sending reminder for appointment: ${appointmentDoc.id}`);
 
-          const transporter = nodemailer.createTransport({
-            jsonTransport: true // Using demo transport as per existing pattern
-          });
+          const transporter = nodemailer.createTransport(
+            process.env.SMTP_HOST ? {
+              host: process.env.SMTP_HOST,
+              port: Number(process.env.SMTP_PORT) || 587,
+              secure: process.env.SMTP_SECURE === 'true',
+              auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+              },
+            } : {
+              jsonTransport: true
+            }
+          );
 
           const userMailOptions = {
             from: '"SARS BOOKING SYSTEM" <noreply@sars-bookings.run.app>',

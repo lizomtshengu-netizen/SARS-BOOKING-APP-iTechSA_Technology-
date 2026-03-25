@@ -489,8 +489,19 @@ function App() {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+      toast.success('Signed in successfully!');
+    } catch (error: any) {
       console.error('Login error:', error);
+      const errorMessage = error.message || 'An unknown error occurred during sign-in.';
+      toast.error(`Sign-in failed: ${errorMessage}`, {
+        duration: 10000,
+      });
+      
+      if (error.code === 'auth/unauthorized-domain') {
+        toast.error('This domain is not authorized in Firebase. Please add this URL to your authorized domains in the Firebase Console.', {
+          duration: 15000,
+        });
+      }
     }
   };
 
