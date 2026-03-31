@@ -48,17 +48,24 @@ async function startServer() {
 
       const mailOptions = {
         from: '"SARS BOOKING SYSTEM" <noreply@sars-bookings.run.app>',
-        to: "lizomtshengu@gmail.com",
-        subject: `NEW SARS BOOKING: ${booking.serviceName}`,
+        to: ["lizomtshengu@gmail.com", userEmail],
+        subject: `SARS BOOKING CONFIRMATION: ${booking.serviceName}`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #003B5C; color: white; padding: 20px; text-align: center;">
-              <h1 style="margin: 0; font-size: 24px;">New Appointment Request</h1>
+              <h1 style="margin: 0; font-size: 24px;">Booking Confirmation</h1>
             </div>
             <div style="padding: 20px; color: #374151;">
-              <p>A new booking has been received from <strong>${userEmail}</strong>.</p>
+              <p>Dear User,</p>
+              <p>Your SARS appointment has been successfully booked. Below are the details of your appointment:</p>
               <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
               <table style="width: 100%; border-collapse: collapse;">
+                ${booking.reference ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #6b7280;">Reference:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #003B5C;">${booking.reference}</td>
+                </tr>
+                ` : ''}
                 <tr>
                   <td style="padding: 8px 0; color: #6b7280;">Service:</td>
                   <td style="padding: 8px 0; font-weight: bold;">${booking.serviceName}</td>
@@ -77,7 +84,7 @@ async function startServer() {
                 </tr>
               </table>
               <div style="margin-top: 30px; padding: 15px; background-color: #f9fafb; border-radius: 6px; font-size: 12px; color: #9ca3af;">
-                This booking is currently pending review prior to linking to the SARS system.
+                Please arrive at the branch 15 minutes before your scheduled time. Remember to bring your original ID and any relevant tax documents.
               </div>
             </div>
           </div>

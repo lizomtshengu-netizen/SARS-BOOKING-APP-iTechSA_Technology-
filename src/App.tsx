@@ -187,6 +187,9 @@ interface Appointment {
   status: 'scheduled' | 'completed' | 'cancelled' | 'rejected';
   rejectionReason?: string;
   createdAt: string;
+  reference?: string;
+  idNumber?: string;
+  phoneNumber?: string;
 }
 
 interface Service {
@@ -295,6 +298,223 @@ const Select = ({ label, options, error, ...props }: React.SelectHTMLAttributes<
   </div>
 );
 
+// --- Components ---
+
+interface AppointmentCardProps {
+  app: Appointment;
+  isAdmin: boolean;
+  expandedAppId: string | null;
+  handleViewDetails: (app: Appointment) => Promise<void> | void;
+  handleUpdateAppointmentStatus: (id: string, status: 'completed' | 'rejected' | 'cancelled', reason?: string) => Promise<void> | void;
+  setActionModal: (val: { show: boolean; appointmentId: string | null; type: 'reject' | 'cancel' | null }) => void;
+  handleDeleteAppointment: (id: string) => Promise<void> | void;
+  loadingUserDetails: string | null;
+  appointmentUserDetails: Record<string, UserProfile>;
+}
+
+const AppointmentCard: React.FC<AppointmentCardProps> = ({ 
+  app, 
+  isAdmin, 
+  expandedAppId, 
+  handleViewDetails, 
+  handleUpdateAppointmentStatus, 
+  setActionModal, 
+  handleDeleteAppointment, 
+  loadingUserDetails, 
+  appointmentUserDetails 
+}) => (
+  <motion.div 
+    layout
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+  >
+    <Card className="hover:border-[#003B5C] transition-colors group">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <div className="bg-gray-50 p-3 rounded-lg group-hover:bg-[#003B5C]/5 transition-colors">
+            <FileText className="w-6 h-6 text-[#003B5C]" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h4 className="font-bold text-gray-900">{app.serviceName}</h4>
+              {app.reference && (
+                <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">
+                  {app.reference}
+                </span>
+              )}
+            </div>
+            {isAdmin && (
+              <p className="text-xs font-medium text-[#003B5C]">
+                Booker: {app.userName} ({app.userEmail})
+              </p>
+            )}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                <MapPin className="w-4 h-4" /> {app.branch}
+              </span>
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                <Calendar className="w-4 h-4" /> {format(parseISO(app.date), 'PPP')}
+              </span>
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                <Clock className="w-4 h-4" /> {format(parseISO(app.date), 'p')}
+              </span>
+            </div>
+            { (app.status === 'rejected' || app.status === 'cancelled') && app.rejectionReason && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className={cn(
+                  "mt-2 p-2 rounded border overflow-hidden",
+                  app.status === 'rejected' ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"
+                )}
+              >
+                <p className={cn(
+                  "text-xs font-medium flex items-center gap-1",
+                  app.status === 'rejected' ? "text-red-600" : "text-orange-600"
+                )}>
+                  <AlertCircle className="w-3 h-3" /> {app.status === 'rejected' ? 'Rejection' : 'Cancellation'} Reason:
+                </p>
+                <p className={cn(
+                  "text-xs mt-0.5",
+                  app.status === 'rejected' ? "text-red-500" : "text-orange-500"
+                )}>{app.rejectionReason}</p>
+              </motion.div>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-3">
+          <div className="flex items-center gap-4">
+            <span className={cn(
+              'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider',
+              app.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
+              app.status === 'completed' ? 'bg-green-100 text-green-700' :
+              app.status === 'rejected' ? 'bg-red-100 text-red-700' :
+              'bg-gray-100 text-gray-700'
+            )}>
+              {app.status}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              className="text-xs py-1 px-2 h-auto flex items-center gap-1"
+              onClick={() => handleViewDetails(app)}
+            >
+              {expandedAppId === app.id ? <ChevronDown className="w-3 h-3 rotate-180 transition-transform" /> : <ChevronDown className="w-3 h-3 transition-transform" />}
+              {expandedAppId === app.id ? 'Hide Details' : 'View Details'}
+            </Button>
+          </div>
+          {isAdmin && app.status === 'scheduled' && (
+            <div className="flex gap-2">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="text-xs py-1 px-2 h-auto"
+                onClick={() => handleUpdateAppointmentStatus(app.id, 'completed')}
+              >
+                Complete
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                className="text-xs py-1 px-2 h-auto text-orange-600 hover:bg-orange-50"
+                onClick={() => setActionModal({ show: true, appointmentId: app.id, type: 'cancel' })}
+              >
+                Cancel
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                className="text-xs py-1 px-2 h-auto text-red-600 hover:bg-red-50"
+                onClick={() => setActionModal({ show: true, appointmentId: app.id, type: 'reject' })}
+              >
+                Reject
+              </Button>
+            </div>
+          )}
+          {!isAdmin && (app.status === 'completed' || app.status === 'rejected') && (
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              className="text-xs py-1 px-2 h-auto text-gray-400 hover:text-red-600 hover:bg-red-50 flex items-center gap-1"
+              onClick={() => handleDeleteAppointment(app.id)}
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded Details */}
+      <AnimatePresence>
+        {expandedAppId === app.id && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="mt-4 pt-4 border-t border-gray-100 overflow-hidden"
+          >
+            {loadingUserDetails === app.id ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
+                <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-[#003B5C]"></div>
+                Loading details...
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+                {isAdmin ? (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booking Reference</p>
+                      <p className="text-sm font-medium text-[#003B5C] font-mono">{app.reference || app.id}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Full Name</p>
+                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.displayName || app.userName || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ID Number</p>
+                      <p className="text-sm font-medium text-gray-900">{app.idNumber || appointmentUserDetails[app.userId]?.idNumber || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Phone Number</p>
+                      <p className="text-sm font-medium text-gray-900">{app.phoneNumber || appointmentUserDetails[app.userId]?.phoneNumber || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">User Email</p>
+                      <p className="text-sm font-medium text-gray-900">{app.userEmail}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booked On</p>
+                      <p className="text-sm font-medium text-gray-900">{format(parseISO(app.createdAt), 'PPP p')}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booking Reference</p>
+                      <p className="text-sm font-medium text-[#003B5C] font-mono">{app.reference || app.id}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</p>
+                      <p className="text-sm font-medium text-gray-900 capitalize">{app.status}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booked On</p>
+                      <p className="text-sm font-medium text-gray-900">{format(parseISO(app.createdAt), 'PPP p')}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
+  </motion.div>
+);
+
 // --- Main App ---
 
 export default function AppWrapper() {
@@ -319,6 +539,7 @@ function App() {
   const [actionModal, setActionModal] = useState<{ show: boolean; appointmentId: string | null; type: 'reject' | 'cancel' | null }>({ show: false, appointmentId: null, type: null });
   const [prevAppointments, setPrevAppointments] = useState<Appointment[]>([]);
   const [activeAdminTab, setActiveAdminTab] = useState<'appointments' | 'users' | 'audit_logs'>('appointments');
+  const [activeUserTab, setActiveUserTab] = useState<'active' | 'past' | 'profile'>('active');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   
@@ -344,8 +565,21 @@ function App() {
     service: '',
     branch: '',
     date: '',
-    time: ''
+    time: '',
+    idNumber: '',
+    phoneNumber: '',
   });
+
+  // Pre-fill booking form with profile data
+  useEffect(() => {
+    if (profile && showBookingModal) {
+      setBookingForm(prev => ({
+        ...prev,
+        idNumber: prev.idNumber || profile.idNumber || '',
+        phoneNumber: prev.phoneNumber || profile.phoneNumber || '',
+      }));
+    }
+  }, [profile, showBookingModal]);
   const [isConflict, setIsConflict] = useState(false);
 
   const isAdmin = user?.email?.toLowerCase() === 'lizomtshengu@gmail.com' || profile?.role === 'admin';
@@ -414,24 +648,24 @@ function App() {
 
   // Real-time conflict detection
   useEffect(() => {
-    if (bookingForm.date && bookingForm.time && bookingForm.branch) {
+    if (bookingForm.date && bookingForm.time && bookingForm.branch && bookingForm.service) {
       const appointmentDate = `${bookingForm.date}T${bookingForm.time}:00Z`;
       const hasConflict = allScheduledAppointments.some(app => 
         app.date === appointmentDate && 
         app.branch === bookingForm.branch &&
+        app.serviceName === bookingForm.service &&
         app.status === 'scheduled'
       );
       setIsConflict(hasConflict);
       if (hasConflict) {
-        setBookingError('This time slot is already booked at this branch. Please select another time.');
+        setBookingError(`The selected time slot is already fully booked for ${bookingForm.service} at ${bookingForm.branch}. Please select another time or branch.`);
       } else {
         setBookingError(null);
       }
     } else {
       setIsConflict(false);
-      setBookingError(null);
     }
-  }, [bookingForm.date, bookingForm.time, bookingForm.branch, allScheduledAppointments]);
+  }, [bookingForm.date, bookingForm.time, bookingForm.branch, bookingForm.service, allScheduledAppointments]);
 
   // Appointments Listener
   useEffect(() => {
@@ -546,7 +780,9 @@ function App() {
   const logAuditAction = async (action: AuditLog['action'], targetId: string, details?: string) => {
     if (!user || !isAdmin) return;
 
-    const logData: Omit<AuditLog, 'id'> = {
+    const logRef = doc(collection(db, 'audit_logs'));
+    const logData: AuditLog = {
+      id: logRef.id,
       adminId: user.uid,
       adminEmail: user.email || '',
       action,
@@ -556,11 +792,9 @@ function App() {
     };
 
     try {
-      await addDoc(collection(db, 'audit_logs'), logData).then(async (docRef) => {
-        await updateDoc(docRef, { id: docRef.id });
-      });
+      await setDoc(logRef, logData);
     } catch (error) {
-      console.error("Failed to log audit action:", error);
+      handleFirestoreError(error, OperationType.CREATE, `audit_logs/${logRef.id}`);
     }
   };
 
@@ -728,6 +962,9 @@ function App() {
     const path = `users/${user.uid}`;
     try {
       await setDoc(doc(db, 'users', user.uid), profile);
+      if (user.displayName !== profile.displayName) {
+        await updateProfile(user, { displayName: profile.displayName });
+      }
       toast.success('Profile updated successfully!');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -739,11 +976,23 @@ function App() {
     setBookingError(null);
     if (!user || !profile) return;
 
-    const { service: serviceName, branch, date, time } = bookingForm;
+    const { service: serviceName, branch, date, time, idNumber, phoneNumber } = bookingForm;
 
     // 1. Basic required fields check
-    if (!serviceName || !branch || !date || !time) {
+    if (!serviceName || !branch || !date || !time || !idNumber || !phoneNumber) {
       setBookingError('Please fill in all required fields.');
+      return;
+    }
+
+    // ID Number validation (must be 13 digits)
+    if (!/^\d{13}$/.test(idNumber)) {
+      setBookingError('ID Number must be exactly 13 digits.');
+      return;
+    }
+
+    // Phone Number validation
+    if (!/^\+?[\d\s-]{10,15}$/.test(phoneNumber)) {
+      setBookingError('Please enter a valid phone number.');
       return;
     }
 
@@ -789,12 +1038,15 @@ function App() {
 
     // 7. Conflict detection
     if (isConflict) {
-      setBookingError('This time slot is already booked at this branch. Please select another time.');
+      setBookingError(`The selected time slot is already fully booked for ${serviceName} at ${branch}. Please select another time or branch.`);
       return;
     }
 
-    const path = 'appointments';
     try {
+      // Fetch next reference from API
+      const refResponse = await fetch('/api/appointments/next-reference');
+      const { reference } = await refResponse.json();
+
       const appData = {
         userId: user.uid,
         userEmail: user.email || '',
@@ -805,7 +1057,10 @@ function App() {
         date: appointmentDate,
         status: 'scheduled',
         reminderSent: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        reference,
+        idNumber,
+        phoneNumber
       };
 
       await addDoc(collection(db, 'appointments'), appData);
@@ -815,7 +1070,10 @@ function App() {
         await fetch('/api/bookings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ booking: appData, userEmail: user.email })
+          body: JSON.stringify({ 
+            booking: { ...appData, id: 'temp-id' }, // Pass reference in appData
+            userEmail: user.email 
+          })
         });
       } catch (err) {
         console.error('Failed to send booking notification email:', err);
@@ -834,7 +1092,7 @@ function App() {
       setShowBookingModal(false);
       toast.success('Appointment booked successfully! A notification has been sent.');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
+      handleFirestoreError(error, OperationType.CREATE, 'appointments');
     }
   };
 
@@ -1281,7 +1539,39 @@ function App() {
           </div>
         )}
 
-        {(!isAdmin || activeAdminTab === 'appointments') && (
+        {!isAdmin && (
+          <div className="flex gap-2 overflow-x-auto pb-2 border-b border-gray-200">
+            <Button 
+              variant={activeUserTab === 'active' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setActiveUserTab('active')}
+              className="whitespace-nowrap"
+            >
+              <Calendar className="w-4 h-4 mr-2" />
+              Active Appointments
+            </Button>
+            <Button 
+              variant={activeUserTab === 'past' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setActiveUserTab('past')}
+              className="whitespace-nowrap"
+            >
+              <History className="w-4 h-4 mr-2" />
+              Past Appointments
+            </Button>
+            <Button 
+              variant={activeUserTab === 'profile' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setActiveUserTab('profile')}
+              className="whitespace-nowrap"
+            >
+              <User className="w-4 h-4 mr-2" />
+              My Profile
+            </Button>
+          </div>
+        )}
+
+        {((!isAdmin && activeUserTab === 'active') || (isAdmin && activeAdminTab === 'appointments')) && (
           <div className="grid lg:grid-cols-3 gap-8">
           {/* Appointments List */}
           <div className="lg:col-span-2 space-y-6">
@@ -1436,177 +1726,18 @@ function App() {
                 </Card>
               ) : (
                 filteredAppointments.map((app) => (
-                  <motion.div 
-                    key={app.id}
-                    layout
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                  >
-                    <Card className="hover:border-[#003B5C] transition-colors group">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-start gap-4">
-                          <div className="bg-gray-50 p-3 rounded-lg group-hover:bg-[#003B5C]/5 transition-colors">
-                            <FileText className="w-6 h-6 text-[#003B5C]" />
-                          </div>
-                          <div className="space-y-1">
-                            <h4 className="font-bold text-gray-900">{app.serviceName}</h4>
-                            {isAdmin && (
-                              <p className="text-xs font-medium text-[#003B5C]">
-                                Booker: {app.userName} ({app.userEmail})
-                              </p>
-                            )}
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                              <span className="text-sm text-gray-500 flex items-center gap-1">
-                                <MapPin className="w-4 h-4" /> {app.branch}
-                              </span>
-                              <span className="text-sm text-gray-500 flex items-center gap-1">
-                                <Calendar className="w-4 h-4" /> {format(parseISO(app.date), 'PPP')}
-                              </span>
-                              <span className="text-sm text-gray-500 flex items-center gap-1">
-                                <Clock className="w-4 h-4" /> {format(parseISO(app.date), 'p')}
-                              </span>
-                            </div>
-                            { (app.status === 'rejected' || app.status === 'cancelled') && app.rejectionReason && (
-                              <motion.div 
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                className={cn(
-                                  "mt-2 p-2 rounded border overflow-hidden",
-                                  app.status === 'rejected' ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"
-                                )}
-                              >
-                                <p className={cn(
-                                  "text-xs font-medium flex items-center gap-1",
-                                  app.status === 'rejected' ? "text-red-600" : "text-orange-600"
-                                )}>
-                                  <AlertCircle className="w-3 h-3" /> {app.status === 'rejected' ? 'Rejection' : 'Cancellation'} Reason:
-                                </p>
-                                <p className={cn(
-                                  "text-xs mt-0.5",
-                                  app.status === 'rejected' ? "text-red-500" : "text-orange-500"
-                                )}>{app.rejectionReason}</p>
-                              </motion.div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-3">
-                          <div className="flex items-center gap-4">
-                            <span className={cn(
-                              'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider',
-                              app.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
-                              app.status === 'completed' ? 'bg-green-100 text-green-700' :
-                              app.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                              'bg-gray-100 text-gray-700'
-                            )}>
-                              {app.status}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              className="text-xs py-1 px-2 h-auto flex items-center gap-1"
-                              onClick={() => handleViewDetails(app)}
-                            >
-                              {expandedAppId === app.id ? <ChevronDown className="w-3 h-3 rotate-180 transition-transform" /> : <ChevronDown className="w-3 h-3 transition-transform" />}
-                              {expandedAppId === app.id ? 'Hide Details' : 'View Details'}
-                            </Button>
-                          </div>
-                          {isAdmin && app.status === 'scheduled' && (
-                            <div className="flex gap-2">
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
-                                className="text-xs py-1 px-2 h-auto"
-                                onClick={() => handleUpdateAppointmentStatus(app.id, 'completed')}
-                              >
-                                Complete
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
-                                className="text-xs py-1 px-2 h-auto text-orange-600 hover:bg-orange-50"
-                                onClick={() => setActionModal({ show: true, appointmentId: app.id, type: 'cancel' })}
-                              >
-                                Cancel
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
-                                className="text-xs py-1 px-2 h-auto text-red-600 hover:bg-red-50"
-                                onClick={() => setActionModal({ show: true, appointmentId: app.id, type: 'reject' })}
-                              >
-                                Reject
-                              </Button>
-                            </div>
-                          )}
-                          {!isAdmin && (app.status === 'completed' || app.status === 'rejected') && (
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              className="text-xs py-1 px-2 h-auto text-gray-400 hover:text-red-600 hover:bg-red-50 flex items-center gap-1"
-                              onClick={() => handleDeleteAppointment(app.id)}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              Clear
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Expanded Details */}
-                      <AnimatePresence>
-                        {expandedAppId === app.id && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="mt-4 pt-4 border-t border-gray-100 overflow-hidden"
-                          >
-                            {loadingUserDetails === app.id ? (
-                              <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
-                                <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-[#003B5C]"></div>
-                                Loading details...
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
-                                {isAdmin ? (
-                                  <>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Full Name</p>
-                                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.displayName || app.userName || 'Not provided'}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ID Number</p>
-                                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.idNumber || 'Not provided'}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Phone Number</p>
-                                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.phoneNumber || 'Not provided'}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">User Email</p>
-                                      <p className="text-sm font-medium text-gray-900">{app.userEmail}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booked On</p>
-                                      <p className="text-sm font-medium text-gray-900">{format(parseISO(app.createdAt), 'PPP p')}</p>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <div className="space-y-1">
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booking Reference</p>
-                                    <p className="text-sm font-medium text-gray-900">{app.id}</p>
-                                    <p className="text-xs text-gray-500 mt-1">Booked on {format(parseISO(app.createdAt), 'PPP p')}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </Card>
-                  </motion.div>
+                  <AppointmentCard 
+                    key={app.id} 
+                    app={app} 
+                    isAdmin={isAdmin}
+                    expandedAppId={expandedAppId}
+                    handleViewDetails={handleViewDetails}
+                    handleUpdateAppointmentStatus={handleUpdateAppointmentStatus}
+                    setActionModal={setActionModal}
+                    handleDeleteAppointment={handleDeleteAppointment}
+                    loadingUserDetails={loadingUserDetails}
+                    appointmentUserDetails={appointmentUserDetails}
+                  />
                 ))
               )}
             </div>
@@ -1655,6 +1786,100 @@ function App() {
           </div>
         </div>
       )}
+
+        {!isAdmin && activeUserTab === 'past' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <History className="w-6 h-6 text-[#003B5C]" />
+                Past Appointments
+              </h3>
+            </div>
+            {appointments.filter(app => ['completed', 'cancelled', 'rejected'].includes(app.status)).length === 0 ? (
+              <Card className="p-12 text-center space-y-4 border-dashed">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
+                  <History className="w-8 h-8 text-gray-400" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900">No past appointments</h4>
+                  <p className="text-gray-500">Your completed or cancelled appointments will appear here.</p>
+                </div>
+              </Card>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                {appointments
+                  .filter(app => ['completed', 'cancelled', 'rejected'].includes(app.status))
+                  .map(app => (
+                    <AppointmentCard 
+                      key={app.id} 
+                      app={app} 
+                      isAdmin={isAdmin}
+                      expandedAppId={expandedAppId}
+                      handleViewDetails={handleViewDetails}
+                      handleUpdateAppointmentStatus={handleUpdateAppointmentStatus}
+                      setActionModal={setActionModal}
+                      handleDeleteAppointment={handleDeleteAppointment}
+                      loadingUserDetails={loadingUserDetails}
+                      appointmentUserDetails={appointmentUserDetails}
+                    />
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isAdmin && activeUserTab === 'profile' && (
+          <div className="max-w-2xl mx-auto">
+            <Card className="p-8 space-y-8">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-[#003B5C] rounded-full flex items-center justify-center text-white text-2xl font-bold">
+                  {profile?.displayName?.[0] || 'U'}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Profile Settings</h3>
+                  <p className="text-sm text-gray-500">Update your personal information and contact details.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Input 
+                    label="Full Name" 
+                    value={profile?.displayName || ''}
+                    onChange={e => setProfile(p => p ? { ...p, displayName: e.target.value } : null)}
+                    required
+                  />
+                  <Input 
+                    label="Email Address" 
+                    value={profile?.email || ''}
+                    disabled
+                    className="bg-gray-50"
+                  />
+                  <Input 
+                    label="ID Number" 
+                    placeholder="13-digit SA ID" 
+                    maxLength={13}
+                    value={profile?.idNumber || ''}
+                    onChange={e => setProfile(p => p ? { ...p, idNumber: e.target.value } : null)}
+                    required
+                  />
+                  <Input 
+                    label="Phone Number" 
+                    placeholder="e.g. 082 123 4567" 
+                    value={profile?.phoneNumber || ''}
+                    onChange={e => setProfile(p => p ? { ...p, phoneNumber: e.target.value } : null)}
+                    required
+                  />
+                </div>
+                <div className="pt-4 border-t border-gray-100 flex justify-end">
+                  <Button type="submit" className="w-full md:w-auto">
+                    Save Profile Changes
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </div>
+        )}
 
         {isAdmin && activeAdminTab === 'users' && (
           <div className="space-y-6">
@@ -1927,6 +2152,26 @@ function App() {
                     options={BRANCHES}
                     required
                   />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input 
+                      label="ID Number" 
+                      name="idNumber"
+                      value={bookingForm.idNumber}
+                      onChange={(e) => setBookingForm(prev => ({ ...prev, idNumber: e.target.value }))}
+                      placeholder="13-digit ID Number"
+                      maxLength={13}
+                      required
+                    />
+                    <Input 
+                      label="Phone Number" 
+                      name="phoneNumber"
+                      value={bookingForm.phoneNumber}
+                      onChange={(e) => setBookingForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                      placeholder="e.g. 0123456789"
+                      required
+                    />
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Input 
