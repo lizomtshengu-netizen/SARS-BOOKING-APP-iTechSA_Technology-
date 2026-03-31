@@ -9,7 +9,10 @@ import {
   signInWithPopup, 
   onAuthStateChanged, 
   signOut, 
-  User as FirebaseUser 
+  User as FirebaseUser,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 import { 
   collection, 
@@ -319,6 +322,15 @@ function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   
+  // Auth state
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -365,7 +377,7 @@ function App() {
             // New user setup
             const newProfile: UserProfile = {
               uid: firebaseUser.uid,
-              displayName: firebaseUser.displayName || 'SARS User',
+              displayName: firebaseUser.displayName || displayName || 'SARS User',
               email: firebaseUser.email || '',
               idNumber: '',
               phoneNumber: '',
@@ -575,11 +587,57 @@ function App() {
   };
 
   const handleLogin = async () => {
+    setAuthError(null);
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
+      setAuthError(error.message || 'Failed to sign in with Google');
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      console.error('Email login error:', error);
+      setAuthError(error.message || 'Invalid email or password');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    
+    if (password !== confirmPassword) {
+      setAuthError('Passwords do not match');
+      return;
+    }
+
+    if (!displayName) {
+      setAuthError('Please enter your full name');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // Update profile with display name
+      await updateProfile(userCredential.user, { displayName });
+      
+      // The onAuthStateChanged listener will handle the profile creation in Firestore
+      toast.success('Account created successfully!');
+    } catch (error: any) {
+      console.error('Email registration error:', error);
+      setAuthError(error.message || 'Failed to create account');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -815,57 +873,117 @@ function App() {
           </div>
           <Card className="p-6 md:p-8 space-y-6">
             <div className="space-y-4">
-              <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                <span>Book appointments at any SARS branch nationwide.</span>
-              </div>
-              <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                <span>Manage your tax queries with professional assistance.</span>
-              </div>
-              <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                <span>Secure access using your Google account.</span>
-              </div>
-            </div>
-            <motion.div
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full max-w-[280px] mx-auto"
-            >
-              <Button 
-                onClick={handleLogin} 
-                variant="outline"
-                className="w-full py-3 text-sm font-semibold bg-white hover:bg-white border border-gray-200 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:shadow-[0_10px_20px_-5px_rgba(0,0,0,0.08)] transition-all duration-500 rounded-xl flex items-center justify-center gap-2 group relative overflow-hidden"
-              >
-                {/* Animated Gradient Shine */}
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-50/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out" />
-                </div>
-                
-                <motion.div 
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.5, duration: 0.6, ease: "easeOut" }}
-                  className="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-[0_1px_3px_rgba(0,0,0,0.05)] border border-gray-100 group-hover:rotate-[8deg] group-hover:scale-105 transition-all duration-500 z-10"
+              <div className="flex items-center justify-center p-1 bg-gray-100 rounded-xl">
+                <button 
+                  onClick={() => setAuthMode('login')}
+                  className={cn(
+                    "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+                    authMode === 'login' ? "bg-white text-[#003B5C] shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  )}
                 >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  Login
+                </button>
+                <button 
+                  onClick={() => setAuthMode('register')}
+                  className={cn(
+                    "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+                    authMode === 'register' ? "bg-white text-[#003B5C] shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  Register
+                </button>
+              </div>
+
+              <form onSubmit={authMode === 'login' ? handleEmailLogin : handleEmailRegister} className="space-y-4">
+                {authMode === 'register' && (
+                  <Input 
+                    label="Full Name" 
+                    placeholder="Enter your full name"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                  />
+                )}
+                <Input 
+                  label="Email Address" 
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <div className="space-y-1">
+                  <Input 
+                    label="Password" 
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  {authMode === 'register' && (
+                    <Input 
+                      label="Confirm Password" 
+                      type="password"
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                    />
+                  )}
+                </div>
+
+                {authError && (
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2 text-xs text-red-600">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{authError}</span>
+                  </div>
+                )}
+
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={authLoading}
+                >
+                  {authLoading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                  ) : (
+                    authMode === 'login' ? 'Sign In' : 'Create Account'
+                  )}
+                </Button>
+              </form>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-gray-500">Or continue with</span>
+                </div>
+              </div>
+
+              <motion.div
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                className="w-full"
+              >
+                <Button 
+                  onClick={handleLogin} 
+                  variant="outline"
+                  className="w-full py-2.5 text-sm font-semibold bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-all duration-300 rounded-xl flex items-center justify-center gap-2 group"
+                >
+                  <svg viewBox="0 0 24 24" className="w-5 h-5">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                     <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                   </svg>
-                </motion.div>
-                
-                <span className="z-10 text-gray-600 tracking-tight group-hover:text-blue-600 transition-colors duration-500">
-                  Sign in with Google
-                </span>
-                
-                <div className="absolute right-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 translate-x-1 transition-all duration-500 ease-out">
-                  <ChevronRight className="w-3.5 h-3.5 text-blue-500" />
-                </div>
-              </Button>
-            </motion.div>
+                  <span className="text-gray-600 group-hover:text-blue-600 transition-colors">
+                    Sign in with Google
+                  </span>
+                </Button>
+              </motion.div>
+            </div>
           </Card>
           <p className="text-xs text-gray-400">
             By signing in, you agree to our <button onClick={() => setShowLegalModal({ show: true, type: 'all' })} className="text-[#003B5C] hover:underline font-medium">Terms of Service, Privacy Policy & POPIA Compliance</button>.
@@ -1454,6 +1572,10 @@ function App() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
                                 {isAdmin ? (
                                   <>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Full Name</p>
+                                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.displayName || app.userName || 'Not provided'}</p>
+                                    </div>
                                     <div className="space-y-1">
                                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ID Number</p>
                                       <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.idNumber || 'Not provided'}</p>

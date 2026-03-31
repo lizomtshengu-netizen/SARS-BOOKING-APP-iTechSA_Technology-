@@ -4,10 +4,20 @@ import path from "path";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 import { collection, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
 import { db } from "./src/firebase.js";
+import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
 
 dotenv.config();
+
+// Initialize Firebase Admin for server-side operations (bypasses rules)
+const adminApp = getApps().length === 0 
+  ? initializeApp({ projectId: firebaseConfig.projectId })
+  : getApps()[0];
+
+const adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId || "(default)");
 
 async function startServer() {
   const app = express();
@@ -260,13 +270,11 @@ async function startServer() {
       const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
       const twentyFiveHoursFromNow = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
-      const q = query(
-        collection(db, "appointments"),
-        where("status", "==", "scheduled"),
-        where("reminderSent", "==", false)
-      );
-
-      const snapshot = await getDocs(q);
+      // Using Admin SDK (adminDb) to bypass security rules for server-side operations
+      const snapshot = await adminDb.collection("appointments")
+        .where("status", "==", "scheduled")
+        .where("reminderSent", "==", false)
+        .get();
       
       for (const appointmentDoc of snapshot.docs) {
         const appointment = appointmentDoc.data();
@@ -355,8 +363,8 @@ async function startServer() {
           await transporter.sendMail(userMailOptions);
           await transporter.sendMail(adminMailOptions);
 
-          // Mark as sent
-          await updateDoc(doc(db, "appointments", appointmentDoc.id), {
+          // Mark as sent using Admin SDK
+          await appointmentDoc.ref.update({
             reminderSent: true
           });
         }
