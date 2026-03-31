@@ -51,7 +51,8 @@ import {
   CalendarDays,
   Mail,
   History,
-  Users as UsersIcon
+  Users as UsersIcon,
+  Info
 } from 'lucide-react';
 import { format, addDays, isAfter, parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -298,6 +299,67 @@ const Select = ({ label, options, error, ...props }: React.SelectHTMLAttributes<
   </div>
 );
 
+const TimeSlotPicker = ({ selectedTime, onSelect, appointments, selectedDate, selectedBranch, selectedService }: { 
+  selectedTime: string; 
+  onSelect: (time: string) => void;
+  appointments: Appointment[];
+  selectedDate: string;
+  selectedBranch: string;
+  selectedService: string;
+}) => {
+  const slots = [
+    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00'
+  ];
+
+  const isSlotBooked = (time: string) => {
+    if (!selectedDate || !selectedBranch || !selectedService) return false;
+    const appointmentDate = `${selectedDate}T${time}:00Z`;
+    return appointments.some(app => 
+      app.date === appointmentDate && 
+      app.branch === selectedBranch &&
+      app.serviceName === selectedService &&
+      app.status === 'scheduled'
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium text-gray-700">Select Time Slot</label>
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        {slots.map(slot => {
+          const booked = isSlotBooked(slot);
+          return (
+            <button
+              key={slot}
+              type="button"
+              disabled={booked}
+              title={booked ? "SLOT UNAVAILABLE" : `Select ${slot}`}
+              onClick={() => onSelect(slot)}
+              className={cn(
+                "flex flex-col items-center justify-center py-2 text-sm font-medium rounded-lg transition-all border min-h-[52px] group relative",
+                selectedTime === slot 
+                  ? "bg-[#003B5C] text-white border-[#003B5C]" 
+                  : booked 
+                    ? "bg-red-50 text-red-500 border-red-200 cursor-not-allowed"
+                    : "bg-white text-gray-700 border-gray-200 hover:border-[#003B5C] hover:text-[#003B5C]"
+              )}
+            >
+              <span>{slot}</span>
+              {booked && <span className="text-[8px] leading-none mt-1 uppercase font-bold">SLOT UNAVAILABLE</span>}
+              {booked && (
+                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                  SLOT UNAVAILABLE
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // --- Components ---
 
 interface AppointmentCardProps {
@@ -534,11 +596,14 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingStep, setBookingStep] = useState<'form' | 'confirm'>('form');
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showLegalModal, setShowLegalModal] = useState<{ show: boolean; type: 'terms' | 'privacy' | 'popia' | 'all' }>({ show: false, type: 'all' });
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [actionModal, setActionModal] = useState<{ show: boolean; appointmentId: string | null; type: 'reject' | 'cancel' | null }>({ show: false, appointmentId: null, type: null });
   const [prevAppointments, setPrevAppointments] = useState<Appointment[]>([]);
+  const [viewMode, setViewMode] = useState<'client' | 'admin'>('client');
+  const [userSearchQuery, setUserSearchQuery] = useState('');
   const [activeAdminTab, setActiveAdminTab] = useState<'appointments' | 'users' | 'audit_logs'>('appointments');
   const [activeUserTab, setActiveUserTab] = useState<'active' | 'past' | 'profile'>('active');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -599,6 +664,14 @@ function App() {
     testConnection();
   }, []);
 
+  useEffect(() => {
+    if (isAdmin) {
+      setViewMode('admin');
+    } else {
+      setViewMode('client');
+    }
+  }, [isAdmin]);
+
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -646,6 +719,7 @@ function App() {
       });
       setBookingError(null);
       setIsConflict(false);
+      setBookingStep('form');
     }
   }, [showBookingModal]);
 
@@ -1112,30 +1186,20 @@ function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full text-center space-y-8"
+          className="max-w-sm w-full space-y-4"
         >
-          <div className="flex justify-center">
-            <Logo className="h-16 md:h-24 w-auto" />
-          </div>
-          <div className="space-y-4 border-2 border-gray-200 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),inset_0_2px_0_rgba(255,255,255,1)] rounded-3xl py-10 px-6 bg-white">
-            <div className="space-y-2">
-              <h1 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight uppercase">SARS BOOKING</h1>
-              <div className="flex justify-center">
-                <img 
-                  src="https://lh3.googleusercontent.com/d/1JrlTMGni6sfMNhbgJCpU4W4DZHsOHo8K" 
-                  alt="SARS Logo" 
-                  className="h-[4.2rem] md:h-[6.3rem] w-auto"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+          <div className="text-center space-y-3 mb-4">
+            <Logo className="h-14 w-auto mx-auto" />
+            <div className="space-y-1">
+              <h1 className="text-3xl font-bold text-gray-900 tracking-tight uppercase">SARS BOOKING</h1>
+              <p className="text-sm text-gray-500 font-medium uppercase tracking-widest">Secure Appointment Portal</p>
             </div>
-            <p className="text-sm md:text-base text-gray-500">Secure appointment management for South African taxpayers.</p>
           </div>
-          <Card className="p-6 md:p-8 space-y-6">
+          <Card className="p-6 space-y-6 shadow-xl border-t-4 border-t-[#003B5C]">
             <div className="space-y-4">
               <div className="flex items-center justify-center p-1 bg-gray-100 rounded-xl">
                 <button 
@@ -1249,7 +1313,7 @@ function App() {
               </motion.div>
             </div>
           </Card>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 text-center px-4">
             By signing in, you agree to our <button onClick={() => setShowLegalModal({ show: true, type: 'all' })} className="text-[#003B5C] hover:underline font-medium">Terms of Service, Privacy Policy & POPIA Compliance</button>.
           </p>
         </motion.div>
@@ -1443,9 +1507,26 @@ function App() {
             </div>
             <span className="font-bold text-lg md:text-xl tracking-tight uppercase">SARS <span className="font-light hidden sm:inline">Bookings</span></span>
             {isAdmin && (
-              <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-[#003B5C] text-white text-[10px] font-bold uppercase tracking-wider">
-                Admin Portal
-              </span>
+              <div className="hidden sm:flex items-center gap-1 ml-4 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                <button 
+                  onClick={() => setViewMode('client')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all",
+                    viewMode === 'client' ? "bg-white text-[#003B5C] shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  Client View
+                </button>
+                <button 
+                  onClick={() => setViewMode('admin')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all",
+                    viewMode === 'admin' ? "bg-[#003B5C] text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  Admin Dashboard
+                </button>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-4">
@@ -1465,18 +1546,24 @@ function App() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
-              Welcome back, {user.displayName?.split(' ')[0]}
-              {isAdmin && <span className="ml-2 text-xs bg-[#003B5C] text-white px-2 py-1 rounded-full align-middle">Admin</span>}
+              {viewMode === 'admin' ? 'Admin Dashboard' : `Welcome back, ${user.displayName?.split(' ')[0]}`}
+              {isAdmin && viewMode === 'client' && <span className="ml-2 text-xs bg-[#003B5C] text-white px-2 py-1 rounded-full align-middle">Admin</span>}
             </h2>
-            <p className="text-sm md:text-base text-gray-500">Manage your SARS appointments and tax services.</p>
+            <p className="text-sm md:text-base text-gray-500">
+              {viewMode === 'admin' 
+                ? 'System-wide appointment management and audit controls.' 
+                : 'Manage your SARS appointments and tax services.'}
+            </p>
           </div>
-          <Button onClick={() => setShowBookingModal(true)} className="md:w-auto">
-            <Plus className="w-5 h-5" />
-            Book New Appointment
-          </Button>
+          {viewMode === 'client' && (
+            <Button onClick={() => setShowBookingModal(true)} className="md:w-auto">
+              <Plus className="w-5 h-5" />
+              Book New Appointment
+            </Button>
+          )}
         </div>
 
-        {needsProfileUpdate && (
+        {viewMode === 'client' && needsProfileUpdate && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1513,7 +1600,48 @@ function App() {
           </motion.div>
         )}
 
-        {isAdmin && (
+        {isAdmin && viewMode === 'admin' && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <Card className="border-l-4 border-blue-500 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Appointments</p>
+                  <p className="text-2xl font-bold text-[#003B5C]">{appointments.length}</p>
+                </div>
+                <Calendar className="w-8 h-8 text-blue-100" />
+              </div>
+            </Card>
+            <Card className="border-l-4 border-green-500 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Scheduled</p>
+                  <p className="text-2xl font-bold text-green-600">{appointments.filter(a => a.status === 'scheduled').length}</p>
+                </div>
+                <ShieldCheck className="w-8 h-8 text-green-100" />
+              </div>
+            </Card>
+            <Card className="border-l-4 border-red-500 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Rejected</p>
+                  <p className="text-2xl font-bold text-red-600">{appointments.filter(a => a.status === 'rejected').length}</p>
+                </div>
+                <AlertCircle className="w-8 h-8 text-red-100" />
+              </div>
+            </Card>
+            <Card className="border-l-4 border-purple-500 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Users</p>
+                  <p className="text-2xl font-bold text-purple-600">{allUsers.length}</p>
+                </div>
+                <UsersIcon className="w-8 h-8 text-purple-100" />
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {isAdmin && viewMode === 'admin' && (
           <div className="flex gap-2 overflow-x-auto pb-2 border-b border-gray-200">
             <Button 
               variant={activeAdminTab === 'appointments' ? 'default' : 'ghost'} 
@@ -1545,7 +1673,7 @@ function App() {
           </div>
         )}
 
-        {!isAdmin && (
+        {viewMode === 'client' && (
           <div className="flex gap-2 overflow-x-auto pb-2 border-b border-gray-200">
             <Button 
               variant={activeUserTab === 'active' ? 'default' : 'ghost'} 
@@ -1577,7 +1705,7 @@ function App() {
           </div>
         )}
 
-        {((!isAdmin && activeUserTab === 'active') || (isAdmin && activeAdminTab === 'appointments')) && (
+        {((viewMode === 'client' && activeUserTab === 'active') || (viewMode === 'admin' && activeAdminTab === 'appointments')) && (
           <div className="grid lg:grid-cols-3 gap-8">
           {/* Appointments List */}
           <div className="lg:col-span-2 space-y-6">
@@ -1794,7 +1922,7 @@ function App() {
         </div>
       )}
 
-        {!isAdmin && activeUserTab === 'past' && (
+        {viewMode === 'client' && activeUserTab === 'past' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -1835,7 +1963,7 @@ function App() {
           </div>
         )}
 
-        {!isAdmin && activeUserTab === 'profile' && (
+        {viewMode === 'client' && activeUserTab === 'profile' && (
           <div className="max-w-2xl mx-auto">
             <Card className="p-8 space-y-8">
               <div className="flex items-center gap-4">
@@ -1888,12 +2016,24 @@ function App() {
           </div>
         )}
 
-        {isAdmin && activeAdminTab === 'users' && (
+        {viewMode === 'admin' && activeAdminTab === 'users' && (
           <div className="space-y-6">
-            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <UsersIcon className="w-6 h-6 text-[#003B5C]" />
-              User Management
-            </h3>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <UsersIcon className="w-6 h-6 text-[#003B5C]" />
+                User Management
+              </h3>
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input 
+                  type="text"
+                  placeholder="Search users..."
+                  className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#003B5C] focus:border-transparent outline-none transition-all text-sm"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
             <Card>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
@@ -1906,37 +2046,42 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {allUsers.map(u => (
-                      <tr key={u.uid} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900">{u.displayName}</div>
-                          <div className="text-xs text-gray-500">{u.email}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={cn(
-                            "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
-                            u.role === 'admin' ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
-                          )}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-gray-500">
-                          {u.phoneNumber || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {u.email.toLowerCase() !== 'lizomtshengu@gmail.com' && (
-                            <select 
-                              className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-[#003B5C]"
-                              value={u.role}
-                              onChange={(e) => handleUpdateUserRole(u.uid, e.target.value as 'client' | 'admin')}
-                            >
-                              <option value="client">Client</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {allUsers
+                      .filter(u => 
+                        u.displayName.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+                        u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
+                      )
+                      .map(u => (
+                        <tr key={u.uid} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="font-medium text-gray-900">{u.displayName}</div>
+                            <div className="text-xs text-gray-500">{u.email}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={cn(
+                              "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
+                              u.role === 'admin' ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                            )}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-gray-500">
+                            {u.phoneNumber || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            {u.email.toLowerCase() !== 'lizomtshengu@gmail.com' && (
+                              <select 
+                                className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-[#003B5C]"
+                                value={u.role}
+                                onChange={(e) => handleUpdateUserRole(u.uid, e.target.value as 'client' | 'admin')}
+                              >
+                                <option value="client">Client</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -1944,7 +2089,7 @@ function App() {
           </div>
         )}
 
-        {isAdmin && activeAdminTab === 'audit_logs' && (
+        {viewMode === 'admin' && activeAdminTab === 'audit_logs' && (
           <div className="space-y-6">
             <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <History className="w-6 h-6 text-[#003B5C]" />
@@ -2134,92 +2279,154 @@ function App() {
               className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
             >
               <div className="bg-[#003B5C] p-6 text-white">
-                <h3 className="text-2xl font-bold">Book Appointment</h3>
-                <p className="text-gray-300 text-sm">Select your service and preferred branch.</p>
+                <h3 className="text-2xl font-bold">
+                  {bookingStep === 'form' ? 'Book Appointment' : 'Confirm Your Booking'}
+                </h3>
+                <p className="text-gray-300 text-sm">
+                  {bookingStep === 'form' 
+                    ? 'Select your service and preferred branch.' 
+                    : 'Please review your appointment details below.'}
+                </p>
               </div>
-              <form onSubmit={handleBookAppointment} className="p-6 space-y-6">
-                {bookingError && (
-                  <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5" />
-                    {bookingError}
-                  </div>
-                )}
-                
-                <div className="space-y-4">
-                  <Select 
-                    label="Service Required" 
-                    name="service"
-                    value={bookingForm.service}
-                    onChange={(e) => setBookingForm(prev => ({ ...prev, service: e.target.value }))}
-                    options={SERVICES.map(s => s.name)}
-                    required
-                  />
 
-                  <Select 
-                    label="SARS Branch" 
-                    name="branch"
-                    value={bookingForm.branch}
-                    onChange={(e) => setBookingForm(prev => ({ ...prev, branch: e.target.value }))}
-                    options={BRANCHES}
-                    required
-                  />
+              {bookingStep === 'form' ? (
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!isConflict && bookingForm.time) {
+                      setBookingStep('confirm');
+                    }
+                  }} 
+                  className="p-6 space-y-6"
+                >
+                  {bookingError && (
+                    <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5" />
+                      {bookingError}
+                    </div>
+                  )}
+                  
+                  <div className="space-y-4">
+                    <Select 
+                      label="Service Required" 
+                      name="service"
+                      value={bookingForm.service}
+                      onChange={(e) => setBookingForm(prev => ({ ...prev, service: e.target.value }))}
+                      options={SERVICES.map(s => s.name)}
+                      required
+                    />
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Input 
-                      label="ID Number" 
-                      name="idNumber"
-                      value={bookingForm.idNumber}
-                      onChange={(e) => setBookingForm(prev => ({ ...prev, idNumber: e.target.value }))}
-                      placeholder="13-digit ID Number"
-                      maxLength={13}
+                    <Select 
+                      label="SARS Branch" 
+                      name="branch"
+                      value={bookingForm.branch}
+                      onChange={(e) => setBookingForm(prev => ({ ...prev, branch: e.target.value }))}
+                      options={BRANCHES}
                       required
                     />
-                    <Input 
-                      label="Phone Number" 
-                      name="phoneNumber"
-                      value={bookingForm.phoneNumber}
-                      onChange={(e) => setBookingForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
-                      placeholder="e.g. 0123456789"
-                      required
-                    />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Input 
+                        label="ID Number" 
+                        name="idNumber"
+                        value={bookingForm.idNumber}
+                        onChange={(e) => setBookingForm(prev => ({ ...prev, idNumber: e.target.value }))}
+                        placeholder="13-digit ID Number"
+                        maxLength={13}
+                        required
+                      />
+                      <Input 
+                        label="Phone Number" 
+                        name="phoneNumber"
+                        value={bookingForm.phoneNumber}
+                        onChange={(e) => setBookingForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                        placeholder="e.g. 0123456789"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-4">
+                      <Input 
+                        label="Date" 
+                        name="date"
+                        type="date" 
+                        value={bookingForm.date}
+                        onChange={(e) => setBookingForm(prev => ({ ...prev, date: e.target.value }))}
+                        min={format(addDays(new Date(), 1), 'yyyy-MM-dd')}
+                        required
+                      />
+                      <TimeSlotPicker 
+                        selectedTime={bookingForm.time}
+                        onSelect={(time) => setBookingForm(prev => ({ ...prev, time }))}
+                        appointments={allScheduledAppointments}
+                        selectedDate={bookingForm.date}
+                        selectedBranch={bookingForm.branch}
+                        selectedService={bookingForm.service}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400 uppercase tracking-wider font-medium">
+                      <div className={`w-1.5 h-1.5 rounded-full ${isConflict ? 'bg-red-500' : 'bg-green-500'} animate-pulse`} />
+                      {isConflict ? 'Time slot unavailable' : 'Real-time conflict detection active'}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Input 
-                      label="Date" 
-                      name="date"
-                      type="date" 
-                      value={bookingForm.date}
-                      onChange={(e) => setBookingForm(prev => ({ ...prev, date: e.target.value }))}
-                      min={format(addDays(new Date(), 1), 'yyyy-MM-dd')}
-                      required
-                    />
-                    <Input 
-                      label="Time" 
-                      name="time"
-                      type="time" 
-                      value={bookingForm.time}
-                      onChange={(e) => setBookingForm(prev => ({ ...prev, time: e.target.value }))}
-                      min="08:00"
-                      max="16:00"
-                      required
-                    />
+                  <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                    <Button type="button" variant="outline" onClick={() => setShowBookingModal(false)} className="w-full sm:flex-1">
+                      Cancel
+                    </Button>
+                    <Button type="submit" className="w-full sm:flex-1" disabled={isConflict || !bookingForm.time}>
+                      Next: Review
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-gray-400 uppercase tracking-wider font-medium">
-                    <div className={`w-1.5 h-1.5 rounded-full ${isConflict ? 'bg-red-500' : 'bg-green-500'} animate-pulse`} />
-                    {isConflict ? 'Time slot unavailable' : 'Real-time conflict detection active'}
+                </form>
+              ) : (
+                <div className="p-6 space-y-6">
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-4 border border-gray-100">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Service</p>
+                        <p className="text-sm font-semibold text-gray-900">{bookingForm.service}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Branch</p>
+                        <p className="text-sm font-semibold text-gray-900">{bookingForm.branch}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date</p>
+                        <p className="text-sm font-semibold text-gray-900">{bookingForm.date ? format(parseISO(bookingForm.date), 'PPP') : ''}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Time</p>
+                        <p className="text-sm font-semibold text-gray-900">{bookingForm.time}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ID Number</p>
+                        <p className="text-sm font-semibold text-gray-900">{bookingForm.idNumber}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Phone</p>
+                        <p className="text-sm font-semibold text-gray-900">{bookingForm.phoneNumber}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-3">
+                    <Info className="w-5 h-5 text-[#003B5C] flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-[#003B5C] leading-relaxed">
+                      By confirming, you agree to attend the appointment at the selected branch. A WhatsApp notification will be sent to your phone number.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                    <Button type="button" variant="outline" onClick={() => setBookingStep('form')} className="w-full sm:flex-1">
+                      Back to Edit
+                    </Button>
+                    <Button onClick={handleBookAppointment} className="w-full sm:flex-1">
+                      Confirm & Book
+                    </Button>
                   </div>
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setShowBookingModal(false)} className="w-full sm:flex-1">
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="w-full sm:flex-1" disabled={isConflict}>
-                    Confirm Booking
-                  </Button>
-                </div>
-              </form>
+              )}
             </motion.div>
           </div>
         )}
