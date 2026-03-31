@@ -38,6 +38,17 @@ service cloud.firestore {
     //   - name: string (required) - The name of the service.
     //   - description: string (required) - A brief description of the service.
     //
+    // Collection: audit_logs
+    // Document ID: {logId}
+    // Fields:
+    //   - id: string (required) - Unique identifier for the log entry.
+    //   - adminId: string (required) - The UID of the admin who performed the action.
+    //   - adminEmail: string (required, email format) - The email of the admin who performed the action.
+    //   - action: string (required, enum: ['appointment_cancelled', 'appointment_rejected', 'user_role_changed']) - The type of action performed.
+    //   - targetId: string (required) - The ID of the target resource.
+    //   - details: string (optional) - Additional information about the action.
+    //   - timestamp: string (required, date-time format) - When the action was performed.
+    //
     // ===============================================================
 
     // ===============================================================
@@ -95,6 +106,15 @@ service cloud.firestore {
         isValidDateString(data.createdAt);
     }
 
+    function isValidAuditLog(data) {
+      return hasOnlyAllowedFields(['id', 'adminId', 'adminEmail', 'action', 'targetId', 'details', 'timestamp']) &&
+        data.adminId == request.auth.uid &&
+        isValidEmail(data.adminEmail) &&
+        data.action in ['appointment_cancelled', 'appointment_rejected', 'user_role_changed'] &&
+        data.targetId is string &&
+        isValidDateString(data.timestamp);
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -120,6 +140,12 @@ service cloud.firestore {
     match /services/{serviceId} {
       allow read: if true; // Publicly readable
       allow write: if isAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidAuditLog(request.resource.data);
+      allow update, delete: if false; // Audit logs are immutable
     }
   }
 }

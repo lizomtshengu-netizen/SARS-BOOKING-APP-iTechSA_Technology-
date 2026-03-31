@@ -44,6 +44,21 @@
         "description": { "type": "string", "description": "A brief description of the service." }
       },
       "required": ["id", "name", "description"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "Records of critical administrative actions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the log entry." },
+        "adminId": { "type": "string", "description": "The UID of the admin who performed the action." },
+        "adminEmail": { "type": "string", "format": "email", "description": "The email of the admin who performed the action." },
+        "action": { "type": "string", "enum": ["appointment_cancelled", "appointment_rejected", "user_role_changed"], "description": "The type of action performed." },
+        "targetId": { "type": "string", "description": "The ID of the target resource (e.g., appointmentId, userId)." },
+        "details": { "type": "string", "description": "Additional information about the action (e.g., reason, old/new roles)." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the action was performed." }
+      },
+      "required": ["id", "adminId", "adminEmail", "action", "targetId", "timestamp"]
     }
   },
   "firestore": {
@@ -58,6 +73,10 @@
     "/services/{serviceId}": {
       "schema": "Service",
       "description": "Stores available SARS services."
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Stores records of administrative actions for auditing purposes."
     }
   }
 }

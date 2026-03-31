@@ -46,7 +46,9 @@ import {
   X,
   ChevronDown,
   CalendarDays,
-  Mail
+  Mail,
+  History,
+  Users as UsersIcon
 } from 'lucide-react';
 import { format, addDays, isAfter, parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -190,6 +192,16 @@ interface Service {
   description: string;
 }
 
+interface AuditLog {
+  id: string;
+  adminId: string;
+  adminEmail: string;
+  action: 'appointment_cancelled' | 'appointment_rejected' | 'user_role_changed';
+  targetId: string;
+  details?: string;
+  timestamp: string;
+}
+
 // --- Constants ---
 const BRANCHES = [
   'iTechSA Technology Practitioner'
@@ -301,8 +313,11 @@ function App() {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showLegalModal, setShowLegalModal] = useState<{ show: boolean; type: 'terms' | 'privacy' | 'popia' | 'all' }>({ show: false, type: 'all' });
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [rejectionModal, setRejectionModal] = useState<{ show: boolean; appointmentId: string | null }>({ show: false, appointmentId: null });
+  const [actionModal, setActionModal] = useState<{ show: boolean; appointmentId: string | null; type: 'reject' | 'cancel' | null }>({ show: false, appointmentId: null, type: null });
   const [prevAppointments, setPrevAppointments] = useState<Appointment[]>([]);
+  const [activeAdminTab, setActiveAdminTab] = useState<'appointments' | 'users' | 'audit_logs'>('appointments');
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -310,6 +325,9 @@ function App() {
   const [serviceFilter, setServiceFilter] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [showFilters, setShowFilters] = useState(false);
+  const [expandedAppId, setExpandedAppId] = useState<string | null>(null);
+  const [appointmentUserDetails, setAppointmentUserDetails] = useState<Record<string, UserProfile>>({});
+  const [loadingUserDetails, setLoadingUserDetails] = useState<string | null>(null);
   const [bookingForm, setBookingForm] = useState({
     service: '',
     branch: '',
@@ -318,7 +336,7 @@ function App() {
   });
   const [isConflict, setIsConflict] = useState(false);
 
-  const isAdmin = user?.email?.toLowerCase() === 'lizomtshengu@gmail.com';
+  const isAdmin = user?.email?.toLowerCase() === 'lizomtshengu@gmail.com' || profile?.role === 'admin';
 
   // Connection Test
   useEffect(() => {
@@ -485,29 +503,116 @@ function App() {
     setPrevAppointments(appointments);
   }, [appointments, isAdmin, user]);
 
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+
+    const q = query(collection(db, 'audit_logs'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const logs = snapshot.docs.map(doc => doc.data() as AuditLog);
+      setAuditLogs(logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'audit_logs');
+    });
+
+    return () => unsubscribe();
+  }, [user, isAdmin]);
+
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const users = snapshot.docs.map(doc => doc.data() as UserProfile);
+      setAllUsers(users);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    });
+
+    return () => unsubscribe();
+  }, [user, isAdmin]);
+
+  const logAuditAction = async (action: AuditLog['action'], targetId: string, details?: string) => {
+    if (!user || !isAdmin) return;
+
+    const logData: Omit<AuditLog, 'id'> = {
+      adminId: user.uid,
+      adminEmail: user.email || '',
+      action,
+      targetId,
+      details,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      await addDoc(collection(db, 'audit_logs'), logData).then(async (docRef) => {
+        await updateDoc(docRef, { id: docRef.id });
+      });
+    } catch (error) {
+      console.error("Failed to log audit action:", error);
+    }
+  };
+
+  const handleUpdateUserRole = async (targetUserId: string, newRole: 'client' | 'admin') => {
+    if (!user || !isAdmin) return;
+    const path = `users/${targetUserId}`;
+    try {
+      const userRef = doc(db, 'users', targetUserId);
+      const targetUser = allUsers.find(u => u.uid === targetUserId);
+      const oldRole = targetUser?.role;
+      
+      await updateDoc(userRef, { role: newRole });
+      
+      await logAuditAction(
+        'user_role_changed',
+        targetUserId,
+        `Changed role from ${oldRole} to ${newRole} for user ${targetUser?.email}`
+      );
+      
+      toast.success(`User role updated to ${newRole}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  };
+
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      toast.success('Signed in successfully!');
-    } catch (error: any) {
+    } catch (error) {
       console.error('Login error:', error);
-      const errorMessage = error.message || 'An unknown error occurred during sign-in.';
-      toast.error(`Sign-in failed: ${errorMessage}`, {
-        duration: 10000,
-      });
-      
-      if (error.code === 'auth/unauthorized-domain') {
-        toast.error('This domain is not authorized in Firebase. Please add this URL to your authorized domains in the Firebase Console.', {
-          duration: 15000,
-        });
-      }
     }
   };
 
   const handleLogout = () => signOut(auth);
 
-  const handleUpdateAppointmentStatus = async (id: string, status: 'completed' | 'rejected', reason?: string) => {
+  const handleViewDetails = async (app: Appointment) => {
+    if (expandedAppId === app.id) {
+      setExpandedAppId(null);
+      return;
+    }
+
+    setExpandedAppId(app.id);
+
+    if (!appointmentUserDetails[app.userId]) {
+      setLoadingUserDetails(app.id);
+      try {
+        const userDoc = await getDoc(doc(db, 'users', app.userId));
+        if (userDoc.exists()) {
+          setAppointmentUserDetails(prev => ({
+            ...prev,
+            [app.userId]: userDoc.data() as UserProfile
+          }));
+        }
+      } catch (error) {
+        console.error("Error fetching user details:", error);
+        toast.error("Failed to load user details");
+      } finally {
+        setLoadingUserDetails(null);
+      }
+    }
+  };
+
+  const handleUpdateAppointmentStatus = async (id: string, status: 'completed' | 'rejected' | 'cancelled', reason?: string) => {
     const path = `appointments/${id}`;
     try {
       const appRef = doc(db, 'appointments', id);
@@ -516,11 +621,12 @@ function App() {
       
       await updateDoc(appRef, updateData);
       
-      if (status === 'rejected') {
+      if (status === 'rejected' || status === 'cancelled') {
         const app = appointments.find(a => a.id === id);
-        // Notify via API (optional, but good for consistency)
+        const endpoint = status === 'rejected' ? '/api/rejections' : '/api/cancellations';
+        // Notify via API
         try {
-          await fetch('/api/rejections', {
+          await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -530,8 +636,15 @@ function App() {
             })
           });
         } catch (err) {
-          console.error('Failed to send rejection notification email:', err);
+          console.error(`Failed to send ${status} notification email:`, err);
         }
+
+        // Log audit action
+        await logAuditAction(
+          status === 'rejected' ? 'appointment_rejected' : 'appointment_cancelled',
+          id,
+          `Reason: ${reason || 'No reason provided'}`
+        );
       }
       
       toast.success(`Appointment ${status} successfully!`);
@@ -1018,7 +1131,40 @@ function App() {
           </motion.div>
         )}
 
-        <div className="grid lg:grid-cols-3 gap-8">
+        {isAdmin && (
+          <div className="flex gap-2 overflow-x-auto pb-2 border-b border-gray-200">
+            <Button 
+              variant={activeAdminTab === 'appointments' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setActiveAdminTab('appointments')}
+              className="whitespace-nowrap"
+            >
+              <Calendar className="w-4 h-4 mr-2" />
+              Appointments
+            </Button>
+            <Button 
+              variant={activeAdminTab === 'users' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setActiveAdminTab('users')}
+              className="whitespace-nowrap"
+            >
+              <UsersIcon className="w-4 h-4 mr-2" />
+              User Management
+            </Button>
+            <Button 
+              variant={activeAdminTab === 'audit_logs' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setActiveAdminTab('audit_logs')}
+              className="whitespace-nowrap"
+            >
+              <History className="w-4 h-4 mr-2" />
+              Audit Logs
+            </Button>
+          </div>
+        )}
+
+        {(!isAdmin || activeAdminTab === 'appointments') && (
+          <div className="grid lg:grid-cols-3 gap-8">
           {/* Appointments List */}
           <div className="lg:col-span-2 space-y-6">
             <div className="flex flex-col gap-4">
@@ -1202,16 +1348,25 @@ function App() {
                                 <Clock className="w-4 h-4" /> {format(parseISO(app.date), 'p')}
                               </span>
                             </div>
-                            {app.status === 'rejected' && app.rejectionReason && (
+                            { (app.status === 'rejected' || app.status === 'cancelled') && app.rejectionReason && (
                               <motion.div 
                                 initial={{ opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: 'auto' }}
-                                className="mt-2 p-2 bg-red-50 rounded border border-red-100 overflow-hidden"
+                                className={cn(
+                                  "mt-2 p-2 rounded border overflow-hidden",
+                                  app.status === 'rejected' ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"
+                                )}
                               >
-                                <p className="text-xs text-red-600 font-medium flex items-center gap-1">
-                                  <AlertCircle className="w-3 h-3" /> Rejection Reason:
+                                <p className={cn(
+                                  "text-xs font-medium flex items-center gap-1",
+                                  app.status === 'rejected' ? "text-red-600" : "text-orange-600"
+                                )}>
+                                  <AlertCircle className="w-3 h-3" /> {app.status === 'rejected' ? 'Rejection' : 'Cancellation'} Reason:
                                 </p>
-                                <p className="text-xs text-red-500 mt-0.5">{app.rejectionReason}</p>
+                                <p className={cn(
+                                  "text-xs mt-0.5",
+                                  app.status === 'rejected' ? "text-red-500" : "text-orange-500"
+                                )}>{app.rejectionReason}</p>
                               </motion.div>
                             )}
                           </div>
@@ -1228,6 +1383,17 @@ function App() {
                               {app.status}
                             </span>
                           </div>
+                          <div className="flex items-center gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="text-xs py-1 px-2 h-auto flex items-center gap-1"
+                              onClick={() => handleViewDetails(app)}
+                            >
+                              {expandedAppId === app.id ? <ChevronDown className="w-3 h-3 rotate-180 transition-transform" /> : <ChevronDown className="w-3 h-3 transition-transform" />}
+                              {expandedAppId === app.id ? 'Hide Details' : 'View Details'}
+                            </Button>
+                          </div>
                           {isAdmin && app.status === 'scheduled' && (
                             <div className="flex gap-2">
                               <Button 
@@ -1241,8 +1407,16 @@ function App() {
                               <Button 
                                 size="sm" 
                                 variant="ghost" 
+                                className="text-xs py-1 px-2 h-auto text-orange-600 hover:bg-orange-50"
+                                onClick={() => setActionModal({ show: true, appointmentId: app.id, type: 'cancel' })}
+                              >
+                                Cancel
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
                                 className="text-xs py-1 px-2 h-auto text-red-600 hover:bg-red-50"
-                                onClick={() => setRejectionModal({ show: true, appointmentId: app.id })}
+                                onClick={() => setActionModal({ show: true, appointmentId: app.id, type: 'reject' })}
                               >
                                 Reject
                               </Button>
@@ -1261,6 +1435,54 @@ function App() {
                           )}
                         </div>
                       </div>
+
+                      {/* Expanded Details */}
+                      <AnimatePresence>
+                        {expandedAppId === app.id && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="mt-4 pt-4 border-t border-gray-100 overflow-hidden"
+                          >
+                            {loadingUserDetails === app.id ? (
+                              <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
+                                <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-[#003B5C]"></div>
+                                Loading details...
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+                                {isAdmin ? (
+                                  <>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ID Number</p>
+                                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.idNumber || 'Not provided'}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Phone Number</p>
+                                      <p className="text-sm font-medium text-gray-900">{appointmentUserDetails[app.userId]?.phoneNumber || 'Not provided'}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">User Email</p>
+                                      <p className="text-sm font-medium text-gray-900">{app.userEmail}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booked On</p>
+                                      <p className="text-sm font-medium text-gray-900">{format(parseISO(app.createdAt), 'PPP p')}</p>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booking Reference</p>
+                                    <p className="text-sm font-medium text-gray-900">{app.id}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Booked on {format(parseISO(app.createdAt), 'PPP p')}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </Card>
                   </motion.div>
                 ))
@@ -1310,6 +1532,117 @@ function App() {
             </Card>
           </div>
         </div>
+      )}
+
+        {isAdmin && activeAdminTab === 'users' && (
+          <div className="space-y-6">
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <UsersIcon className="w-6 h-6 text-[#003B5C]" />
+              User Management
+            </h3>
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-gray-500 uppercase bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3">User</th>
+                      <th className="px-6 py-3">Role</th>
+                      <th className="px-6 py-3">Contact</th>
+                      <th className="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {allUsers.map(u => (
+                      <tr key={u.uid} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900">{u.displayName}</div>
+                          <div className="text-xs text-gray-500">{u.email}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={cn(
+                            "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
+                            u.role === 'admin' ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                          )}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-gray-500">
+                          {u.phoneNumber || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {u.email.toLowerCase() !== 'lizomtshengu@gmail.com' && (
+                            <select 
+                              className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-[#003B5C]"
+                              value={u.role}
+                              onChange={(e) => handleUpdateUserRole(u.uid, e.target.value as 'client' | 'admin')}
+                            >
+                              <option value="client">Client</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {isAdmin && activeAdminTab === 'audit_logs' && (
+          <div className="space-y-6">
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <History className="w-6 h-6 text-[#003B5C]" />
+              Audit Logs
+            </h3>
+            <div className="space-y-4">
+              {auditLogs.map(log => (
+                <div key={log.id}>
+                  <Card className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className={cn(
+                          "p-2 rounded-lg",
+                          log.action === 'appointment_cancelled' ? "bg-orange-100 text-orange-600" :
+                          log.action === 'appointment_rejected' ? "bg-red-100 text-red-600" :
+                          "bg-blue-100 text-blue-600"
+                        )}>
+                          {log.action === 'appointment_cancelled' ? <X className="w-4 h-4" /> :
+                           log.action === 'appointment_rejected' ? <AlertCircle className="w-4 h-4" /> :
+                           <UsersIcon className="w-4 h-4" />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">
+                            {log.action.replace(/_/g, ' ').toUpperCase()}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Performed by <span className="font-medium text-gray-700">{log.adminEmail}</span>
+                          </p>
+                          {log.details && (
+                            <p className="text-xs mt-2 p-2 bg-gray-50 rounded border border-gray-100 text-gray-600 italic">
+                              {log.details}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-gray-400 mt-1">Target ID: {log.targetId}</p>
+                        </div>
+                      </div>
+                      <div className="text-right whitespace-nowrap">
+                        <p className="text-xs font-medium text-gray-500">{format(parseISO(log.timestamp), 'PPp')}</p>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              ))}
+              {auditLogs.length === 0 && (
+                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-200">
+                  <History className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                  <p className="text-gray-500">No audit logs found.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Support Modal */}
@@ -1537,15 +1870,15 @@ function App() {
           © {new Date().getFullYear()} iTechSA Technology. All rights reserved.
         </div>
       </footer>
-      {/* Rejection Modal */}
+      {/* Action Modal (Reject/Cancel) */}
       <AnimatePresence>
-        {rejectionModal.show && (
+        {actionModal.show && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setRejectionModal({ show: false, appointmentId: null })}
+              onClick={() => setActionModal({ show: false, appointmentId: null, type: null })}
               className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             />
             <motion.div 
@@ -1554,36 +1887,48 @@ function App() {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
             >
-              <div className="bg-red-600 p-6 text-white">
-                <h3 className="text-xl font-bold">Reject Appointment</h3>
-                <p className="text-red-100 text-sm">Please provide a reason for rejection.</p>
+              <div className={cn(
+                "p-6 text-white",
+                actionModal.type === 'reject' ? "bg-red-600" : "bg-orange-600"
+              )}>
+                <h3 className="text-xl font-bold">{actionModal.type === 'reject' ? 'Reject' : 'Cancel'} Appointment</h3>
+                <p className={cn(
+                  "text-sm",
+                  actionModal.type === 'reject' ? "text-red-100" : "text-orange-100"
+                )}>Please provide a reason for {actionModal.type === 'reject' ? 'rejection' : 'cancellation'}.</p>
               </div>
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();
                   const reason = (new FormData(e.currentTarget)).get('reason') as string;
-                  if (rejectionModal.appointmentId) {
-                    handleUpdateAppointmentStatus(rejectionModal.appointmentId, 'rejected', reason);
-                    setRejectionModal({ show: false, appointmentId: null });
+                  if (actionModal.appointmentId && actionModal.type) {
+                    handleUpdateAppointmentStatus(actionModal.appointmentId, actionModal.type === 'reject' ? 'rejected' : 'cancelled', reason);
+                    setActionModal({ show: false, appointmentId: null, type: null });
                   }
                 }} 
                 className="p-6 space-y-4"
               >
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Rejection Reason</label>
+                  <label className="text-sm font-medium text-gray-700">Reason</label>
                   <textarea 
                     name="reason"
-                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition-all min-h-[100px]"
-                    placeholder="e.g. Practitioner unavailable, please select another time."
+                    className={cn(
+                      "w-full px-4 py-2 rounded-lg border focus:ring-2 focus:border-transparent outline-none transition-all min-h-[100px]",
+                      actionModal.type === 'reject' ? "border-gray-200 focus:ring-red-500" : "border-gray-200 focus:ring-orange-500"
+                    )}
+                    placeholder={actionModal.type === 'reject' ? "e.g. Practitioner unavailable, please select another time." : "e.g. Branch closed for maintenance."}
                     required
                   />
                 </div>
                 <div className="flex gap-3">
-                  <Button type="button" variant="ghost" onClick={() => setRejectionModal({ show: false, appointmentId: null })} className="flex-1">
+                  <Button type="button" variant="ghost" onClick={() => setActionModal({ show: false, appointmentId: null, type: null })} className="flex-1">
                     Cancel
                   </Button>
-                  <Button type="submit" className="flex-1 bg-red-600 hover:bg-red-700">
-                    Confirm Rejection
+                  <Button type="submit" className={cn(
+                    "flex-1 text-white",
+                    actionModal.type === 'reject' ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"
+                  )}>
+                    Confirm {actionModal.type === 'reject' ? 'Rejection' : 'Cancellation'}
                   </Button>
                 </div>
               </form>
