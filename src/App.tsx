@@ -451,6 +451,7 @@ const AppointmentCard: React.FC<AppointmentCardProps> = ({
       <AnimatePresence>
         {expandedAppId === app.id && (
           <motion.div
+            key="appointment-details"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -639,7 +640,9 @@ function App() {
         service: '',
         branch: '',
         date: '',
-        time: ''
+        time: '',
+        idNumber: '',
+        phoneNumber: '',
       });
       setBookingError(null);
       setIsConflict(false);
@@ -754,7 +757,7 @@ function App() {
 
     const q = query(collection(db, 'audit_logs'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const logs = snapshot.docs.map(doc => doc.data() as AuditLog);
+      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditLog));
       setAuditLogs(logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'audit_logs');
@@ -1045,6 +1048,9 @@ function App() {
     try {
       // Fetch next reference from API
       const refResponse = await fetch('/api/appointments/next-reference');
+      if (!refResponse.ok) {
+        throw new Error(`Failed to get next reference: ${refResponse.statusText}`);
+      }
       const { reference } = await refResponse.json();
 
       const appData = {
@@ -1251,7 +1257,7 @@ function App() {
         {/* Legal Modal */}
         <AnimatePresence>
           {showLegalModal.show && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div key="legal-modal-overlay" className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1615,9 +1621,10 @@ function App() {
               </div>
 
               {/* Filter Panel */}
-              <AnimatePresence>
+              <AnimatePresence mode="wait">
                 {showFilters && (
                   <motion.div
+                    key="filters-panel"
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
@@ -1995,8 +2002,9 @@ function App() {
       {/* Support Modal */}
       <AnimatePresence>
         {showSupportModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div key="support-modal-overlay" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div 
+              key="support-modal-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -2004,6 +2012,7 @@ function App() {
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             />
             <motion.div 
+              key="support-modal-content"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -2108,8 +2117,9 @@ function App() {
       </AnimatePresence>
       <AnimatePresence>
         {showBookingModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div key="booking-modal-overlay" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div 
+              key="booking-modal-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -2117,6 +2127,7 @@ function App() {
               className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             />
             <motion.div 
+              key="booking-modal-content"
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -2240,8 +2251,9 @@ function App() {
       {/* Action Modal (Reject/Cancel) */}
       <AnimatePresence>
         {actionModal.show && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div key="action-modal-overlay" className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <motion.div 
+              key="action-modal-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -2249,6 +2261,7 @@ function App() {
               className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             />
             <motion.div 
+              key="action-modal-content"
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}

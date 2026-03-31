@@ -248,6 +248,30 @@ async function startServer() {
     }
   });
 
+  app.get("/api/appointments/next-reference", async (req, res) => {
+    try {
+      const snapshot = await adminDb.collection("appointments")
+        .orderBy("reference", "desc")
+        .limit(1)
+        .get();
+      
+      let nextNum = 1;
+      if (!snapshot.empty) {
+        const lastRef = snapshot.docs[0].data().reference;
+        if (lastRef && lastRef.startsWith("ITSABR")) {
+          const numPart = lastRef.replace("ITSABR", "");
+          nextNum = parseInt(numPart, 10) + 1;
+        }
+      }
+      
+      const reference = `ITSABR${nextNum.toString().padStart(3, '0')}`;
+      res.json({ reference });
+    } catch (error) {
+      console.error("Error generating next reference:", error);
+      res.status(500).json({ error: "Failed to generate reference" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
