@@ -1145,6 +1145,23 @@ function App() {
 
       await addDoc(collection(db, 'appointments'), appData);
 
+      // Link/Update user profile in Firestore
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const updatedProfile = {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || profile?.displayName || 'SARS User',
+          idNumber,
+          phoneNumber,
+          role: profile?.role || 'client'
+        };
+        await setDoc(userRef, updatedProfile, { merge: true });
+        setProfile(updatedProfile as UserProfile);
+      } catch (err) {
+        console.error('Failed to update user profile during booking:', err);
+      }
+
       // 2. Send Email Notification via API
       try {
         await fetch('/api/bookings', {
