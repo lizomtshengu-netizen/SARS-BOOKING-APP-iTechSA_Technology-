@@ -30,7 +30,10 @@
         "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled", "rejected"], "description": "The current status of the appointment." },
         "rejectionReason": { "type": "string", "description": "The reason for rejection if the appointment was rejected." },
         "reminderSent": { "type": "boolean", "description": "Whether a 24-hour reminder has been sent." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the appointment was created." }
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the appointment was created." },
+        "reference": { "type": "string", "description": "Unique reference for the appointment." },
+        "idNumber": { "type": "string", "description": "South African ID number of the booker." },
+        "phoneNumber": { "type": "string", "description": "Contact number of the booker." }
       },
       "required": ["id", "userId", "serviceId", "serviceName", "branch", "date", "status", "createdAt"]
     },

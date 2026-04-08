@@ -75,7 +75,7 @@ service cloud.firestore {
     }
 
     function isValidDateString(dateStr) {
-      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*$");
     }
 
     function hasOnlyAllowedFields(fields) {
@@ -104,7 +104,7 @@ service cloud.firestore {
         isValidDateString(data.date) &&
         data.status in ['scheduled', 'completed', 'cancelled', 'rejected'] &&
         isValidDateString(data.createdAt) &&
-        (!('reference' in data) || (data.reference is string && data.reference.matches("^ITSABR\\d{3}$"))) &&
+        (!('reference' in data) || (data.reference is string && data.reference.matches("^ITSABR.*$"))) &&
         (!('idNumber' in data) || (data.idNumber is string && data.idNumber.size() == 13)) &&
         (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() >= 10 && data.phoneNumber.size() <= 15));
     }

@@ -596,7 +596,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [bookingStep, setBookingStep] = useState<'form' | 'confirm'>('form');
+  const [bookingStep, setBookingStep] = useState<'form' | 'confirm' | 'success'>('form');
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showLegalModal, setShowLegalModal] = useState<{ show: boolean; type: 'terms' | 'privacy' | 'popia' | 'all' }>({ show: false, type: 'all' });
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -1048,8 +1048,8 @@ function App() {
     }
   };
 
-  const handleBookAppointment = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleBookAppointment = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
     setBookingError(null);
     if (!user || !profile) return;
 
@@ -1169,7 +1169,7 @@ function App() {
       
       window.open(`https://wa.me/27768699399?text=${encodeURIComponent(whatsappMessage)}`, '_blank');
 
-      setShowBookingModal(false);
+      setBookingStep('success');
       toast.success('Appointment booked successfully! A notification has been sent.');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'appointments');
@@ -1562,43 +1562,6 @@ function App() {
             </Button>
           )}
         </div>
-
-        {viewMode === 'client' && needsProfileUpdate && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
-            <Card className="border-l-4 border-[#F2A900] bg-amber-50">
-              <div className="flex gap-4">
-                <AlertCircle className="w-6 h-6 text-[#F2A900] flex-shrink-0" />
-                <div className="space-y-4 flex-1">
-                  <div>
-                    <h3 className="font-bold text-[#003B5C]">Complete Your Profile</h3>
-                    <p className="text-sm text-gray-600">We need your ID number and phone number to process bookings.</p>
-                  </div>
-                  <form onSubmit={handleSaveProfile} className="grid md:grid-cols-3 gap-4 items-end">
-                    <Input 
-                      label="ID Number" 
-                      placeholder="13-digit SA ID" 
-                      maxLength={13}
-                      value={profile?.idNumber || ''}
-                      onChange={e => setProfile(p => p ? { ...p, idNumber: e.target.value } : null)}
-                      required
-                    />
-                    <Input 
-                      label="Phone Number" 
-                      placeholder="e.g. 082 123 4567" 
-                      value={profile?.phoneNumber || ''}
-                      onChange={e => setProfile(p => p ? { ...p, phoneNumber: e.target.value } : null)}
-                      required
-                    />
-                    <Button type="submit" variant="secondary">Save Details</Button>
-                  </form>
-                </div>
-              </div>
-            </Card>
-          </motion.div>
-        )}
 
         {isAdmin && viewMode === 'admin' && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -2276,16 +2239,19 @@ function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
-              <div className="bg-[#003B5C] p-6 text-white">
+              <div className="bg-[#003B5C] p-6 text-white flex-shrink-0">
                 <h3 className="text-2xl font-bold">
-                  {bookingStep === 'form' ? 'Book Appointment' : 'Confirm Your Booking'}
+                  {bookingStep === 'form' ? 'Book Appointment' : 
+                   bookingStep === 'confirm' ? 'Review & Confirm' : 'Booking Successful!'}
                 </h3>
                 <p className="text-gray-300 text-sm">
                   {bookingStep === 'form' 
                     ? 'Select your service and preferred branch.' 
-                    : 'Please review your appointment details below.'}
+                    : bookingStep === 'confirm'
+                    ? 'Please carefully review your appointment details.'
+                    : 'Your appointment has been confirmed.'}
                 </p>
               </div>
 
@@ -2297,7 +2263,7 @@ function App() {
                       setBookingStep('confirm');
                     }
                   }} 
-                  className="p-6 space-y-6"
+                  className="p-6 space-y-6 overflow-y-auto flex-1"
                 >
                   {bookingError && (
                     <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2">
@@ -2379,52 +2345,106 @@ function App() {
                     </Button>
                   </div>
                 </form>
-              ) : (
-                <div className="p-6 space-y-6">
-                  <div className="bg-gray-50 rounded-xl p-4 space-y-4 border border-gray-100">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Service</p>
-                        <p className="text-sm font-semibold text-gray-900">{bookingForm.service}</p>
+              ) : bookingStep === 'confirm' ? (
+                <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                  <div className="relative overflow-hidden bg-white rounded-2xl border border-gray-200 shadow-sm">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-[#003B5C]" />
+                    <div className="p-6 space-y-6">
+                      <div className="flex items-center gap-3 pb-4 border-bottom border-gray-100">
+                        <div className="bg-blue-50 p-2 rounded-lg">
+                          <CalendarDays className="w-5 h-5 text-[#003B5C]" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-tight">Appointment Summary</h4>
+                          <p className="text-[10px] text-gray-400 font-medium">Please verify all information is correct</p>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Branch</p>
-                        <p className="text-sm font-semibold text-gray-900">{bookingForm.branch}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date</p>
-                        <p className="text-sm font-semibold text-gray-900">{bookingForm.date ? format(parseISO(bookingForm.date), 'PPP') : ''}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Time</p>
-                        <p className="text-sm font-semibold text-gray-900">{bookingForm.time}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ID Number</p>
-                        <p className="text-sm font-semibold text-gray-900">{bookingForm.idNumber}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Phone</p>
-                        <p className="text-sm font-semibold text-gray-900">{bookingForm.phoneNumber}</p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6">
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Service Type</p>
+                          <p className="text-sm font-semibold text-gray-900">{bookingForm.service}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">SARS Branch</p>
+                          <p className="text-sm font-semibold text-gray-900">{bookingForm.branch}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Appointment Date</p>
+                          <p className="text-sm font-semibold text-gray-900">{bookingForm.date ? format(parseISO(bookingForm.date), 'EEEE, MMMM do, yyyy') : ''}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Time Slot</p>
+                          <p className="text-sm font-semibold text-[#003B5C] bg-blue-50 px-2 py-0.5 rounded inline-block">{bookingForm.time}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">ID Number</p>
+                          <p className="text-sm font-semibold text-gray-900">{bookingForm.idNumber}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Contact Number</p>
+                          <p className="text-sm font-semibold text-gray-900">{bookingForm.phoneNumber}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-3">
-                    <Info className="w-5 h-5 text-[#003B5C] flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-[#003B5C] leading-relaxed">
-                      By confirming, you agree to attend the appointment at the selected branch. A WhatsApp notification will be sent to your phone number.
+                  <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
+                    <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-amber-900">Important Notice</p>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        By confirming, you agree to attend the appointment at the selected branch. A WhatsApp notification will be sent to your phone number. Please bring your original ID document and all relevant tax documents.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 pt-2">
+                    <Button onClick={handleBookAppointment} className="w-full py-4 text-lg shadow-lg shadow-blue-900/20">
+                      Confirm & Finalize Booking
+                    </Button>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button type="button" variant="outline" onClick={() => setBookingStep('form')} className="w-full">
+                        Back to Edit
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setShowBookingModal(false)} className="w-full text-red-600 hover:text-red-700 hover:bg-red-50">
+                        Cancel Booking
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center space-y-6 overflow-y-auto flex-1">
+                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-10 h-10 text-green-600" />
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-xl font-bold text-gray-900">Appointment Confirmed!</h4>
+                    <p className="text-sm text-gray-500 leading-relaxed">
+                      Your appointment for <span className="font-bold text-gray-700">{bookingForm.service}</span> at <span className="font-bold text-gray-700">{bookingForm.branch}</span> has been successfully scheduled.
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 space-y-4">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-500">Date</span>
+                      <span className="font-bold text-gray-900">{bookingForm.date ? format(parseISO(bookingForm.date), 'PPP') : ''}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-500">Time</span>
+                      <span className="font-bold text-[#003B5C]">{bookingForm.time}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                    <p className="text-xs text-[#003B5C] font-medium">
+                      A confirmation has been sent to your email and WhatsApp. Please arrive 10 minutes early.
                     </p>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-3 pt-4">
-                    <Button type="button" variant="outline" onClick={() => setBookingStep('form')} className="w-full sm:flex-1">
-                      Back to Edit
-                    </Button>
-                    <Button onClick={handleBookAppointment} className="w-full sm:flex-1">
-                      Confirm & Book
-                    </Button>
-                  </div>
+                  <Button onClick={() => setShowBookingModal(false)} className="w-full py-4 text-lg">
+                    Done
+                  </Button>
                 </div>
               )}
             </motion.div>

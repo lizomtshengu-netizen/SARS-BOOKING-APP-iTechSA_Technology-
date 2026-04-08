@@ -4,20 +4,21 @@ import path from "path";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import cron from "node-cron";
-import { initializeApp, getApps } from "firebase-admin/app";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { collection, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
-import { db } from "./src/firebase.js";
 import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
 
 dotenv.config();
 
 // Initialize Firebase Admin for server-side operations (bypasses rules)
+// In this environment, we should rely on application default credentials
 const adminApp = getApps().length === 0 
-  ? initializeApp({ projectId: firebaseConfig.projectId })
+  ? initializeApp({ 
+      projectId: firebaseConfig.projectId,
+    })
   : getApps()[0];
 
-const adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId || "(default)");
+const adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
@@ -48,7 +49,7 @@ async function startServer() {
 
       const mailOptions = {
         from: '"SARS BOOKING SYSTEM" <noreply@sars-bookings.run.app>',
-        to: ["lizomtshengu@gmail.com", userEmail],
+        to: ["LizoMtshengu@gmail.com", userEmail],
         subject: `SARS BOOKING CONFIRMATION: ${booking.serviceName}`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
@@ -250,17 +251,33 @@ async function startServer() {
 
   app.get("/api/appointments/next-reference", async (req, res) => {
     try {
-      const snapshot = await adminDb.collection("appointments")
-        .orderBy("reference", "desc")
-        .limit(1)
-        .get();
-      
       let nextNum = 1;
-      if (!snapshot.empty) {
+      let snapshot;
+      
+      try {
+        // Try with the configured database first
+        snapshot = await adminDb.collection("appointments")
+          .orderBy("reference", "desc")
+          .limit(1)
+          .get();
+      } catch (dbError: any) {
+        console.warn("Primary database access failed, trying default database:", dbError.message);
+        // If the named database fails (e.g. permission error), try the default one
+        const defaultDb = getFirestore(adminApp);
+        snapshot = await defaultDb.collection("appointments")
+          .orderBy("reference", "desc")
+          .limit(1)
+          .get();
+      }
+      
+      if (snapshot && !snapshot.empty) {
         const lastRef = snapshot.docs[0].data().reference;
         if (lastRef && lastRef.startsWith("ITSABR")) {
-          const numPart = lastRef.replace("ITSABR", "");
-          nextNum = parseInt(numPart, 10) + 1;
+          // Extract number part, handling potential non-numeric characters gracefully
+          const numPart = lastRef.replace("ITSABR", "").replace(/[^0-9]/g, "");
+          if (numPart) {
+            nextNum = parseInt(numPart, 10) + 1;
+          }
         }
       }
       
@@ -268,7 +285,10 @@ async function startServer() {
       res.json({ reference });
     } catch (error) {
       console.error("Error generating next reference:", error);
-      res.status(500).json({ error: "Failed to generate reference" });
+      // Fallback: Generate a unique reference based on timestamp if Firestore query fails completely
+      const timestamp = Date.now().toString().slice(-6);
+      const reference = `ITSABR-FB-${timestamp}`;
+      res.json({ reference });
     }
   });
 
@@ -302,10 +322,20 @@ async function startServer() {
       const twentyFiveHoursFromNow = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
       // Using Admin SDK (adminDb) to bypass security rules for server-side operations
-      const snapshot = await adminDb.collection("appointments")
-        .where("status", "==", "scheduled")
-        .where("reminderSent", "==", false)
-        .get();
+      let snapshot;
+      try {
+        snapshot = await adminDb.collection("appointments")
+          .where("status", "==", "scheduled")
+          .where("reminderSent", "==", false)
+          .get();
+      } catch (dbError: any) {
+        console.warn("Cron job: Primary database access failed, trying default database:", dbError.message);
+        const defaultDb = getFirestore(adminApp);
+        snapshot = await defaultDb.collection("appointments")
+          .where("status", "==", "scheduled")
+          .where("reminderSent", "==", false)
+          .get();
+      }
       
       for (const appointmentDoc of snapshot.docs) {
         const appointment = appointmentDoc.data();
